@@ -37,6 +37,11 @@ type config struct {
 	HealthCheckInitResultErrorTTL time.Duration `env:"HEALTH_CHECK_INIT_RESULT_ERROR_TTL" envDefault:"10s"`
 	// Amount of time to wait before failing the health check
 	HealthCheckMaxWait time.Duration `env:"HEALTH_CHECK_MAX_WAIT" envDefault:"5s"`
+	// Amount of time that a health result checked in background is valid
+	HealthCheckResultTTL time.Duration `env:"HEALTH_CHECK_RESULT_TTL" envDefault:"90s"`
+	// How often should a background health check be performed?
+	// Should be at most HealthCheckResult - HealthCheckMaxWait
+	HealthCheckBackgroundInterval time.Duration `env:"HEALTH_CHECK_BACKGROUND_CHECK_INTERAL" envDefault:"1m"`
 }
 
 var cfg config
@@ -46,6 +51,10 @@ var requiredChecks sync.Map
 
 // optionalChecks contains all optional registered Health Checks - key:Name
 var optionalChecks sync.Map
+
+type initError struct {
+	state ConnectionState
+}
 
 // initErrors map with all err ConnectionState that happened in the initialization of any health check - key:Name
 var initErrors sync.Map
@@ -77,7 +86,10 @@ func init() {
 	}
 }
 
-func check(ctx context.Context, hcs *sync.Map) map[string]HealthCheckResult {
+// checkActively checks all heal checks in the map actively and waits for them
+// to return or run into a timeout
+// nolint: deadcode // TODO remove in future revision if not used by 2021/07/01
+func checkActively(ctx context.Context, hcs *sync.Map) map[string]HealthCheckResult {
 	ctx, cancel := context.WithTimeout(ctx, cfg.HealthCheckMaxWait)
 
 	result := make(map[string]HealthCheckResult)
@@ -124,7 +136,6 @@ func reInitHealthCheck(ctx context.Context, conState *ConnectionState, name stri
 		conState.SetErrorState(err)
 		return true
 	}
-	initErrors.Delete(name)
 	return false
 }
 
@@ -186,6 +197,14 @@ func registerHealthCheck(checks *sync.Map, hc HealthCheck, name string) {
 		longestCheckName = len(name)
 	}
 	checks.Store(name, hc)
+	// start doing the check in background
+	startBackgroundHealthCheck(ctx, name, hc, cfg.HealthCheckBackgroundInterval)
+}
+
+func deleteHealthCheck(name string) {
+	cancelBackgroundHealthCheck(name)
+	requiredChecks.Delete(name)
+	optionalChecks.Delete(name)
 }
 
 // HealthHandler returns the health endpoint for transactional processing. This Handler only checks

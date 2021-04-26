@@ -2,6 +2,7 @@ package servicehealthcheck
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/pace/bricks/maintenance/log"
@@ -15,12 +16,12 @@ type jsonHealthHandler struct {
 }
 
 func (h *jsonHealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Debug("JSON HTTP handler")
-	s := log.Sink{Silent: true}
-	ctx := log.ContextWithSink(r.Context(), &s)
+	ctx := log.WithContext(r.Context())
 
-	reqChecks := check(ctx, &requiredChecks)
-	optChecks := check(ctx, &optionalChecks)
+	reqChecks := getRequiredResults()
+	optChecks := getOptionalResults()
+	var errors []string
+	var warnings []string
 
 	checkResponse := make([]jsonHealthHandler, len(reqChecks)+len(optChecks))
 	index := 0
@@ -36,9 +37,15 @@ func (h *jsonHealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if res.State == Err {
 			scr.Error = res.Msg
 			status = http.StatusServiceUnavailable
+			errors = append(errors, fmt.Sprintf("%s: %s", name, res.Msg))
+		} else if res.State == Warn {
+			warnings = append(warnings, fmt.Sprintf("%s: %s", name, res.Msg))
 		}
 		checkResponse[index] = scr
 		index++
+	}
+	if len(errors) > 0 {
+		log.Ctx(ctx).Info().Strs("errors", errors).Strs("warnings", warnings).Msg("JSON HTTP handler: health check failed")
 	}
 
 	for name, res := range optChecks {

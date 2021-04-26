@@ -165,7 +165,6 @@ func (s *Sink) initBuffer() {
 type stringRing struct {
 	data    []string
 	nextPos int
-	maxPos  int
 	size    int
 }
 

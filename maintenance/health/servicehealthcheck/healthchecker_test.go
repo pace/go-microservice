@@ -130,9 +130,21 @@ func testRequest(t *testing.T, expCode int, expBody string) {
 }
 
 func resetHealthChecks() {
+	checks := []string{}
+	requiredChecks.Range(func(k, v interface{}) bool {
+		name := k.(string)
+		checks = append(checks, name)
+		return true
+	})
+	optionalChecks.Range(func(k, v interface{}) bool {
+		name := k.(string)
+		checks = append(checks, name)
+		return true
+	})
 	//remove all previous health checks
-	requiredChecks = sync.Map{}
-	optionalChecks = sync.Map{}
+	for _, name := range checks {
+		deleteHealthCheck(name)
+	}
 	initErrors = sync.Map{}
 }
 

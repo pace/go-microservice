@@ -13,12 +13,11 @@ import (
 type healthHandler struct{}
 
 func (h *healthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s := log.Sink{Silent: true}
-	ctx := log.ContextWithSink(r.Context(), &s)
+	ctx := log.WithContext(r.Context())
 
 	var errors []string
 	var warnings []string
-	for name, res := range check(ctx, &requiredChecks) {
+	for name, res := range getRequiredResults() {
 		if res.State == Err {
 			errors = append(errors, fmt.Sprintf("%s: %s", name, res.Msg))
 		} else if res.State == Warn {
@@ -26,7 +25,7 @@ func (h *healthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(errors) > 0 {
-		log.Logger().Info().Strs("errors", errors).Strs("warnings", warnings).Msg("Health check failed")
+		log.Ctx(ctx).Info().Strs("errors", errors).Strs("warnings", warnings).Msg("Health check failed")
 		msg := fmt.Sprintf("ERR: %d errors and %d warnings", len(errors), len(warnings))
 		writeResult(w, http.StatusServiceUnavailable, msg)
 		return
